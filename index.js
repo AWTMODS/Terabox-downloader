@@ -5,11 +5,11 @@ const { MongoClient } = require("mongodb");
 const https = require("https");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const BASE_URL = "https://alphaapis.org/terabox/v3/dl?url="; // Updated API link
+const BASE_URL = "https://alphaapis.org/terabox/v3/dl?url=";
 const CHANNEL_USERNAME = "@awt_bots";
 const MONGO_URI = process.env.MONGO_URI;
 
-// Create HTTP agent for faster persistent connections
+// HTTP agent for better performance
 const agent = new https.Agent({ keepAlive: true, maxSockets: 10 });
 
 const client = new MongoClient(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
@@ -35,32 +35,30 @@ async function saveUser(userId) {
     await usersCollection.updateOne({ userId }, { $set: { userId } }, { upsert: true });
 }
 
-function extractTeraboxId(text) {
-    const match = text.match(/\/s\/([a-zA-Z0-9_-]+)/);
-    return match ? match[1] : text.trim();
-}
-
-bot.start((ctx) => ctx.reply("Send me a TeraBox link or Video ID, and I'll download it for you!"));
+bot.start((ctx) => {
+    ctx.reply("Send me a TeraBox link (e.g. https://1024terabox.com/s/xxxxxx), and I'll download it for you!");
+});
 
 bot.on("text", async (ctx) => {
     const userId = ctx.from.id;
     if (!(await isUserMember(userId))) {
         return ctx.reply(`❌ You must join ${CHANNEL_USERNAME} to use this bot.`);
     }
+
     await saveUser(userId);
 
     const text = ctx.message.text.trim();
-    const videoId = extractTeraboxId(text);
+    const validLink = text.match(/^https:\/\/1024terabox\.com\/s\/[a-zA-Z0-9_-]+$/);
 
-    if (!videoId) {
-        return ctx.reply("❌ Invalid TeraBox link. Please send a correct link or ID.");
+    if (!validLink) {
+        return ctx.reply("❌ Invalid TeraBox link. Please send a full valid URL like https://1024terabox.com/s/xxxx");
     }
 
-    console.log("Extracted Video ID:", videoId);
+    console.log("TeraBox URL:", text);
     const processingMsg = await ctx.reply("⏳ Fetching video link...");
 
     try {
-        const response = await axios.get(`${BASE_URL}${videoId}`, { httpsAgent: agent }); // Faster API request
+        const response = await axios.get(`${BASE_URL}${encodeURIComponent(text)}`, { httpsAgent: agent });
         console.log("API Response:", response.data);
 
         if (!response.data || response.data.success !== true) {
@@ -69,8 +67,6 @@ bot.on("text", async (ctx) => {
 
         const downloadUrl = response.data.data.downloadLink;
         const fileSize = parseInt(response.data.data.size, 10) || 0;
-
-        console.log("Download URL:", downloadUrl);
 
         if (!downloadUrl) {
             return ctx.reply("❌ No download link found.");
@@ -82,7 +78,6 @@ bot.on("text", async (ctx) => {
 
         await ctx.reply("✅ Video found! 🔄 Downloading...");
 
-        // Stream video directly to Telegram without saving to disk
         const videoStream = await axios({
             method: "GET",
             url: downloadUrl,
@@ -90,8 +85,8 @@ bot.on("text", async (ctx) => {
         });
 
         await ctx.replyWithVideo(
-            { source: videoStream.data }, 
-            { disable_notification: true } // Speeds up Telegram upload
+            { source: videoStream.data },
+            { disable_notification: true }
         );
 
         await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
