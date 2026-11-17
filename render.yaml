@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: terabox-downloader-bot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: CHANNEL_USERNAME
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
